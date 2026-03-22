@@ -98,6 +98,7 @@ export interface DesktopBridge {
   getWsUrl: () => string | null;
   pickFolder: () => Promise<string | null>;
   confirm: (message: string) => Promise<boolean>;
+  openInEditor: (executablePath: string, cwd: string) => Promise<boolean>;
   setTheme: (theme: DesktopTheme) => Promise<void>;
   showContextMenu: <T extends string>(
     items: readonly ContextMenuItem<T>[],
@@ -130,7 +131,7 @@ export interface NativeApi {
     writeFile: (input: ProjectWriteFileInput) => Promise<ProjectWriteFileResult>;
   };
   shell: {
-    openInEditor: (cwd: string, editor: EditorId) => Promise<void>;
+    openInEditor: (cwd: string, editor: EditorId, executablePath?: string) => Promise<void>;
     openExternal: (url: string) => Promise<void>;
   };
   git: {

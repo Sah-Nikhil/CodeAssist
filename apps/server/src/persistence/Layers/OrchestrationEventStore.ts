@@ -64,6 +64,32 @@ const ReadFromSequenceRequestSchema = Schema.Struct({
 const DEFAULT_READ_FROM_SEQUENCE_LIMIT = 1_000;
 const READ_PAGE_SIZE = 500;
 
+function normalizeLegacyEventRow(
+  row: Schema.Schema.Type<typeof OrchestrationEventPersistedRowSchema>,
+): Schema.Schema.Type<typeof OrchestrationEventPersistedRowSchema> {
+  if (row.type !== "thread.turn-start-requested") {
+    return row;
+  }
+
+  const payload = row.payload;
+  if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
+    return row;
+  }
+
+  const provider = (payload as { readonly provider?: unknown }).provider;
+  if (provider !== "copilot") {
+    return row;
+  }
+
+  return {
+    ...row,
+    payload: {
+      ...(payload as Record<string, unknown>),
+      provider: "codex",
+    },
+  };
+}
+
 function inferActorKind(
   event: Omit<OrchestrationEvent, "sequence">,
 ): Schema.Schema.Type<typeof OrchestrationActorKind> {
@@ -199,7 +225,7 @@ const makeEventStore = Effect.gen(function* () {
         ),
       ),
       Effect.flatMap((row) =>
-        decodeEvent(row).pipe(
+        decodeEvent(normalizeLegacyEventRow(row)).pipe(
           Effect.mapError(toPersistenceDecodeError("OrchestrationEventStore.append:rowToEvent")),
         ),
       ),
@@ -230,7 +256,7 @@ const makeEventStore = Effect.gen(function* () {
           ),
           Effect.flatMap((rows) =>
             Effect.forEach(rows, (row) =>
-              decodeEvent(row).pipe(
+              decodeEvent(normalizeLegacyEventRow(row)).pipe(
                 Effect.mapError(
                   toPersistenceDecodeError("OrchestrationEventStore.readFromSequence:rowToEvent"),
                 ),

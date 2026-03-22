@@ -336,6 +336,20 @@ describe("wsNativeApi", () => {
     });
   });
 
+  it("forwards shell.openInEditor including executablePath when provided", async () => {
+    requestMock.mockResolvedValue(undefined);
+    const { createWsNativeApi } = await import("./wsNativeApi");
+
+    const api = createWsNativeApi();
+    await api.shell.openInEditor("/tmp/workspace", "vscode", "/custom/editor");
+
+    expect(requestMock).toHaveBeenCalledWith(WS_METHODS.shellOpenInEditor, {
+      cwd: "/tmp/workspace",
+      editor: "vscode",
+      executablePath: "/custom/editor",
+    });
+  });
+
   it("forwards context menu metadata to desktop bridge", async () => {
     const showContextMenu = vi.fn().mockResolvedValue("delete");
     Object.defineProperty(getWindowForTest(), "desktopBridge", {
