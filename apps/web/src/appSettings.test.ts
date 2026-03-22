@@ -1,9 +1,10 @@
 import { Schema } from "effect";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   AppSettingsSchema,
   DEFAULT_TIMESTAMP_FORMAT,
+  getAppSettingsSnapshot,
   getAppModelOptions,
   getCustomModelOptionsByProvider,
   getCustomModelsByProvider,
@@ -13,6 +14,7 @@ import {
   normalizeCustomModelSlugs,
   patchCustomModels,
   resolveAppModelSelection,
+  updateAppSettings,
 } from "./appSettings";
 
 describe("normalizeCustomModelSlugs", () => {
@@ -211,12 +213,49 @@ describe("AppSettingsSchema", () => {
     ).toMatchObject({
       codexBinaryPath: "/usr/local/bin/codex",
       codexHomePath: "",
+      preferredEditor: null,
+      preferredEditorExecutablePath: "",
+      useCustomEditorPathTouched: false,
+      useCustomEditorPath: false,
       defaultThreadEnvMode: "local",
       confirmThreadDelete: false,
       enableAssistantStreaming: false,
       timestampFormat: DEFAULT_TIMESTAMP_FORMAT,
       customCodexModels: [],
       customClaudeModels: [],
+    });
+  });
+});
+
+describe("editor preference settings", () => {
+  beforeEach(() => {
+    for (const key of Object.keys(localStorage)) {
+      localStorage.removeItem(key);
+    }
+  });
+
+  it("returns editor-related defaults from snapshot", () => {
+    expect(getAppSettingsSnapshot()).toMatchObject({
+      preferredEditor: null,
+      preferredEditorExecutablePath: "",
+      useCustomEditorPathTouched: false,
+      useCustomEditorPath: false,
+    });
+  });
+
+  it("persists editor path + custom editor flags through updateAppSettings", () => {
+    updateAppSettings({
+      preferredEditor: "cursor",
+      preferredEditorExecutablePath: "C:\\Program Files\\Cursor\\Cursor.exe",
+      useCustomEditorPathTouched: true,
+      useCustomEditorPath: true,
+    });
+
+    expect(getAppSettingsSnapshot()).toMatchObject({
+      preferredEditor: "cursor",
+      preferredEditorExecutablePath: "C:\\Program Files\\Cursor\\Cursor.exe",
+      useCustomEditorPathTouched: true,
+      useCustomEditorPath: true,
     });
   });
 });

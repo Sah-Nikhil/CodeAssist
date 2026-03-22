@@ -1,7 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
-import { type ProviderKind, DEFAULT_GIT_TEXT_GENERATION_MODEL } from "@t3tools/contracts";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Schema } from "effect";
+import {
+  DEFAULT_GIT_TEXT_GENERATION_MODEL,
+  EDITORS,
+  EditorId,
+  type ProviderKind,
+} from "@t3tools/contracts";
 import { getModelOptions, normalizeModelSlug } from "@t3tools/shared/model";
 import {
   getAppModelOptions,
@@ -29,6 +35,7 @@ import {
 import { Switch } from "../components/ui/switch";
 import { APP_VERSION } from "../branding";
 import { SidebarInset } from "~/components/ui/sidebar";
+import { resolveCustomEditorPreferenceForPathEdit } from "../components/chat/OpenInPicker.logic";
 
 const THEME_OPTIONS = [
   {
@@ -53,6 +60,7 @@ const TIMESTAMP_FORMAT_LABELS = {
   "12-hour": "12-hour",
   "24-hour": "24-hour",
 } as const;
+const SYSTEM_DEFAULT_EDITOR_VALUE = "__system-default__";
 
 function SettingsRouteView() {
   const { theme, setTheme, resolvedTheme } = useTheme();
@@ -69,6 +77,8 @@ function SettingsRouteView() {
   const [customModelErrorByProvider, setCustomModelErrorByProvider] = useState<
     Partial<Record<ProviderKind, string | null>>
   >({});
+  const [editorPathSaved, setEditorPathSaved] = useState(false);
+  const previousEditorPathRef = useRef(settings.preferredEditorExecutablePath);
 
   const codexBinaryPath = settings.codexBinaryPath;
   const codexHomePath = settings.codexHomePath;
@@ -85,6 +95,16 @@ function SettingsRouteView() {
       (option) =>
         option.slug === (settings.textGenerationModel ?? DEFAULT_GIT_TEXT_GENERATION_MODEL),
     )?.name ?? settings.textGenerationModel;
+
+  useEffect(() => {
+    if (settings.preferredEditorExecutablePath === previousEditorPathRef.current) {
+      return;
+    }
+    previousEditorPathRef.current = settings.preferredEditorExecutablePath;
+    setEditorPathSaved(true);
+    const timeout = setTimeout(() => setEditorPathSaved(false), 2_000);
+    return () => clearTimeout(timeout);
+  }, [settings.preferredEditorExecutablePath]);
 
   const openKeybindingsFile = useCallback(() => {
     if (!keybindingsConfigPath) return;
@@ -473,6 +493,85 @@ function SettingsRouteView() {
                     </div>
                   );
                 })}
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-border bg-card p-5">
+              <div className="mb-4">
+                <h2 className="text-sm font-medium text-foreground">Editors</h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Configure your preferred editor and optional custom editor executable path.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium text-foreground">Preferred editor</p>
+                    <p className="text-xs text-muted-foreground">
+                      Used as the default when opening files from T3 Code.
+                    </p>
+                  </div>
+                  <Select
+                    value={settings.preferredEditor ?? SYSTEM_DEFAULT_EDITOR_VALUE}
+                    onValueChange={(value) => {
+                      if (value === SYSTEM_DEFAULT_EDITOR_VALUE) {
+                        updateSettings({ preferredEditor: null });
+                        return;
+                      }
+                      if (!Schema.is(EditorId)(value)) return;
+                      updateSettings({ preferredEditor: value });
+                    }}
+                  >
+                    <SelectTrigger
+                      className="w-full shrink-0 sm:w-48"
+                      aria-label="Preferred editor"
+                    >
+                      <SelectValue>
+                        {settings.preferredEditor
+                          ? (EDITORS.find((editor) => editor.id === settings.preferredEditor)
+                              ?.label ?? "Preferred editor")
+                          : "System default"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup align="end">
+                      <SelectItem value={SYSTEM_DEFAULT_EDITOR_VALUE}>System default</SelectItem>
+                      {EDITORS.map((editor) => (
+                        <SelectItem key={editor.id} value={editor.id}>
+                          {editor.label}
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
+                </div>
+
+                <label htmlFor="custom-editor-executable-path" className="block space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-foreground">
+                      Custom editor executable path
+                    </span>
+                    {editorPathSaved ? (
+                      <span className="rounded bg-primary/14 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+                        Saved
+                      </span>
+                    ) : null}
+                  </div>
+                  <Input
+                    id="custom-editor-executable-path"
+                    value={settings.preferredEditorExecutablePath}
+                    onChange={(event) =>
+                      updateSettings({
+                        preferredEditorExecutablePath: event.target.value,
+                        ...resolveCustomEditorPreferenceForPathEdit(),
+                      })
+                    }
+                    placeholder="C:\\Program Files\\Editor\\editor.exe"
+                    spellCheck={false}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    If set, Open can launch this editor directly.
+                  </span>
+                </label>
               </div>
             </section>
 

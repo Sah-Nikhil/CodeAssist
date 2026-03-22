@@ -8,9 +8,63 @@ import {
   launchDetached,
   resolveAvailableEditors,
   resolveEditorLaunch,
+  shouldUseShellForLaunch,
 } from "./open";
 
 it.layer(NodeServices.layer)("resolveEditorLaunch", (it) => {
+  it.effect("prefers explicit executable path and strips wrapping quotes", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const dir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-open-test-" });
+      const executable = path.join(dir, "my-editor.CMD");
+      yield* fs.writeFileString(executable, "@echo off\r\n");
+      const previousPath = process.env.PATH;
+      const previousPathExt = process.env.PATHEXT;
+      process.env.PATH = dir;
+      process.env.PATHEXT = ".COM;.EXE;.BAT;.CMD";
+      try {
+        const launch = yield* resolveEditorLaunch(
+          {
+            cwd: "C:\\workspace",
+            editor: "cursor",
+            executablePath: `"${executable}"`,
+          },
+          "win32",
+        );
+        assert.deepEqual(launch, {
+          command: executable,
+          args: ["C:\\workspace"],
+        });
+      } finally {
+        if (previousPath === undefined) {
+          delete process.env.PATH;
+        } else {
+          process.env.PATH = previousPath;
+        }
+        if (previousPathExt === undefined) {
+          delete process.env.PATHEXT;
+        } else {
+          process.env.PATHEXT = previousPathExt;
+        }
+      }
+    }),
+  );
+
+  it.effect("fails when explicit executable path is not runnable", () =>
+    Effect.gen(function* () {
+      const result = yield* resolveEditorLaunch(
+        {
+          cwd: "C:\\workspace",
+          editor: "cursor",
+          executablePath: "C:\\definitely\\missing\\editor.exe",
+        },
+        "win32",
+      ).pipe(Effect.result);
+      assert.equal(result._tag, "Failure");
+    }),
+  );
+
   it.effect("returns commands for command-based editors", () =>
     Effect.gen(function* () {
       const antigravityLaunch = yield* resolveEditorLaunch(
@@ -211,6 +265,14 @@ it.layer(NodeServices.layer)("isCommandAvailable", (it) => {
       assert.equal(isCommandAvailable("code", { platform: "win32", env }), true);
     }),
   );
+});
+
+it("shouldUseShellForLaunch", () => {
+  assert.equal(shouldUseShellForLaunch("npm", "win32"), true);
+  assert.equal(shouldUseShellForLaunch("C:\\Program Files\\Tool\\tool.exe", "win32"), false);
+  assert.equal(shouldUseShellForLaunch("script.cmd", "win32"), true);
+  assert.equal(shouldUseShellForLaunch("script.bat", "win32"), true);
+  assert.equal(shouldUseShellForLaunch("code", "darwin"), false);
 });
 
 it.layer(NodeServices.layer)("resolveAvailableEditors", (it) => {

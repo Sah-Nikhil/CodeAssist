@@ -1,16 +1,17 @@
 import { useCallback } from "react";
 import { Option, Schema } from "effect";
-import { TrimmedNonEmptyString, type ProviderKind } from "@t3tools/contracts";
+import { EditorId, TrimmedNonEmptyString, type ProviderKind } from "@t3tools/contracts";
 import {
   getDefaultModel,
   getModelOptions,
   normalizeModelSlug,
   resolveSelectableModel,
 } from "@t3tools/shared/model";
-import { useLocalStorage } from "./hooks/useLocalStorage";
+import { getLocalStorageItem, setLocalStorageItem, useLocalStorage } from "./hooks/useLocalStorage";
 import { EnvMode } from "./components/BranchToolbar.logic";
 
 const APP_SETTINGS_STORAGE_KEY = "t3code:app-settings:v1";
+const LOCAL_STORAGE_CHANGE_EVENT = "t3code:local_storage_change";
 const MAX_CUSTOM_MODEL_COUNT = 32;
 export const MAX_CUSTOM_MODEL_LENGTH = 256;
 
@@ -49,6 +50,12 @@ const withDefaults =
 export const AppSettingsSchema = Schema.Struct({
   codexBinaryPath: Schema.String.check(Schema.isMaxLength(4096)).pipe(withDefaults(() => "")),
   codexHomePath: Schema.String.check(Schema.isMaxLength(4096)).pipe(withDefaults(() => "")),
+  preferredEditor: Schema.NullOr(EditorId).pipe(withDefaults(() => null)),
+  preferredEditorExecutablePath: Schema.String.check(Schema.isMaxLength(4096)).pipe(
+    withDefaults(() => ""),
+  ),
+  useCustomEditorPathTouched: Schema.Boolean.pipe(withDefaults(() => false)),
+  useCustomEditorPath: Schema.Boolean.pipe(withDefaults(() => false)),
   defaultThreadEnvMode: EnvMode.pipe(withDefaults(() => "local" as const satisfies EnvMode)),
   confirmThreadDelete: Schema.Boolean.pipe(withDefaults(() => true)),
   enableAssistantStreaming: Schema.Boolean.pipe(withDefaults(() => false)),
@@ -122,6 +129,37 @@ function normalizeAppSettings(settings: AppSettings): AppSettings {
     customCodexModels: normalizeCustomModelSlugs(settings.customCodexModels, "codex"),
     customClaudeModels: normalizeCustomModelSlugs(settings.customClaudeModels, "claudeAgent"),
   };
+}
+
+function persistSettings(settings: AppSettings): void {
+  setLocalStorageItem(APP_SETTINGS_STORAGE_KEY, settings, AppSettingsSchema);
+}
+
+function emitChange(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent<{ key: string }>(LOCAL_STORAGE_CHANGE_EVENT, {
+      detail: { key: APP_SETTINGS_STORAGE_KEY },
+    }),
+  );
+}
+
+export function getAppSettingsSnapshot(): AppSettings {
+  const settings = getLocalStorageItem(APP_SETTINGS_STORAGE_KEY, AppSettingsSchema);
+  if (!settings) return DEFAULT_APP_SETTINGS;
+  return normalizeAppSettings(settings);
+}
+
+export function updateAppSettings(patch: Partial<AppSettings>): AppSettings {
+  const next = normalizeAppSettings(
+    Schema.decodeSync(AppSettingsSchema)({
+      ...getAppSettingsSnapshot(),
+      ...patch,
+    }),
+  );
+  persistSettings(next);
+  emitChange();
+  return next;
 }
 
 export function getCustomModelsForProvider(

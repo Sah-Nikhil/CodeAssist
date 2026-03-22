@@ -1001,11 +1001,18 @@ describe("WebSocket Server", () => {
   });
 
   it("routes shell.openInEditor through the injected open service", async () => {
-    const openCalls: Array<{ cwd: string; editor: string }> = [];
+    const openCalls: Array<{ cwd: string; editor: string; executablePath?: string }> = [];
     const openService: OpenShape = {
       openBrowser: () => Effect.void,
       openInEditor: (input) => {
-        openCalls.push({ cwd: input.cwd, editor: input.editor });
+        const call: { cwd: string; editor: string; executablePath?: string } = {
+          cwd: input.cwd,
+          editor: input.editor,
+        };
+        if (input.executablePath) {
+          call.executablePath = input.executablePath;
+        }
+        openCalls.push(call);
         return Effect.void;
       },
     };
@@ -1020,9 +1027,12 @@ describe("WebSocket Server", () => {
     const response = await sendRequest(ws, WS_METHODS.shellOpenInEditor, {
       cwd: "/my/workspace",
       editor: "cursor",
+      executablePath: "/opt/custom/cursor",
     });
     expect(response.error).toBeUndefined();
-    expect(openCalls).toEqual([{ cwd: "/my/workspace", editor: "cursor" }]);
+    expect(openCalls).toEqual([
+      { cwd: "/my/workspace", editor: "cursor", executablePath: "/opt/custom/cursor" },
+    ]);
   });
 
   it("reads keybindings from the configured state directory", async () => {

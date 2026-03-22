@@ -8,6 +8,7 @@
  */
 import { spawn } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import { extname, join } from "node:path";
 
 import { EDITORS, type EditorId } from "@t3tools/contracts";
@@ -25,6 +26,7 @@ export class OpenError extends Schema.TaggedErrorClass<OpenError>()("OpenError",
 export interface OpenInEditorInput {
   readonly cwd: string;
   readonly editor: EditorId;
+  readonly executablePath?: string | undefined;
 }
 
 interface EditorLaunch {
@@ -161,6 +163,14 @@ export function isCommandAvailable(
   return false;
 }
 
+export function shouldUseShellForLaunch(command: string, platform: NodeJS.Platform): boolean {
+  if (platform !== "win32") return false;
+  const ext = extname(command).toLowerCase();
+  if (ext === ".bat" || ext === ".cmd") return true;
+  if (isAbsolute(command)) return false;
+  return !(command.includes("/") || command.includes("\\"));
+}
+
 export function resolveAvailableEditors(
   platform: NodeJS.Platform = process.platform,
   env: NodeJS.ProcessEnv = process.env,
@@ -207,6 +217,19 @@ export const resolveEditorLaunch = Effect.fnUntraced(function* (
   input: OpenInEditorInput,
   platform: NodeJS.Platform = process.platform,
 ): Effect.fn.Return<EditorLaunch, OpenError> {
+  const explicitExecutablePath = input.executablePath
+    ? stripWrappingQuotes(input.executablePath.trim())
+    : undefined;
+
+  if (explicitExecutablePath && explicitExecutablePath.length > 0) {
+    if (!isCommandAvailable(explicitExecutablePath, { platform })) {
+      return yield* new OpenError({
+        message: `Editor executable path is not runnable: ${explicitExecutablePath}`,
+      });
+    }
+    return { command: explicitExecutablePath, args: [input.cwd] };
+  }
+
   const editorDef = EDITORS.find((editor) => editor.id === input.editor);
   if (!editorDef) {
     return yield* new OpenError({ message: `Unknown editor: ${input.editor}` });
@@ -234,10 +257,11 @@ export const launchDetached = (launch: EditorLaunch) =>
     yield* Effect.callback<void, OpenError>((resume) => {
       let child;
       try {
+        const useShell = shouldUseShellForLaunch(launch.command, process.platform);
         child = spawn(launch.command, [...launch.args], {
           detached: true,
           stdio: "ignore",
-          shell: process.platform === "win32",
+          shell: useShell,
         });
       } catch (error) {
         return resume(
